@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+
+    <button>
+        Test the API!
+    </button>
+    <div id="result"></div>
+    
+</body>
+<script src="http://localhost:5123/main.js"></script>
+<script>
+    const button = document.querySelector('button');
+    button.addEventListener('click', () => {
+        fetch('http://localhost:5123/exampleApi')
+            .then(
+                res => res.status
+            ).then(
+                status => {
+                    if (status === 200) {
+                        document.getElementById('result').innerHTML = "You passed!";
+                    } else {
+                        document.getElementById('result').innerHTML = "You didn't pass.";
+                    }
+                }
+            )
+    });
+</script>
+
+</html>
