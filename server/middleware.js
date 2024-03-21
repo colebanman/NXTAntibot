@@ -8,18 +8,19 @@ const { Client } = require("../client/client")
 const ws = require('ws');
 const clients = new Map();
 
-function getClient(uuid, socket){
+async function getClient(uuid, socket){
     if(clients.has(uuid)){
         return clients.get(uuid);
     };
 
     let client = new Client(uuid, socket);
+    
 
     clients.set(uuid, client);
     return client;
 }
 
-function nxtMiddleware(app, secureEndpoints, config = {
+async function nxtMiddleware(app, secureEndpoints, config = {
     recordLogs: true,
     obscureResponses: false,
     minimumPassScore: 0.5,
@@ -46,11 +47,11 @@ function nxtMiddleware(app, secureEndpoints, config = {
     const wss = new ws.Server({ port: 8080 });
     log("WebSocket server listening on port 8080");
 
-    wss.on('error', (error) => {
+    wss.on('error', async(error) => {
         console.error('WebSocket error:', error);
     });
 
-    wss.on('connection', (socket, req) => {
+    wss.on('connection', async(socket, req) => {
         // get ws headers
         const headers = req.headers;
         const nxtCookie = headers.cookie.split(";").find(c => c.trim().startsWith("nxt=")).split("=")[1];
@@ -61,14 +62,27 @@ function nxtMiddleware(app, secureEndpoints, config = {
             return;
         }
     
-        let client = getClient(nxtCookie, socket);
+        let client = await getClient(nxtCookie, socket);
     
         log(`Client ${client.uuid} connected!`)
         
-        // let's send our first challenge
-        let challenge = client.getChallenge();
-        console.log(`Sending challenge ${challenge.id} to client ${client.uuid}`);
-        client.performChallenge(challenge);
+        // send challenge, up to 10, until client.trustScore > config.minimumPassScore
+        for(let i = 0; i < 10; i++){
+            let challenge = client.getChallenge();
+            if(!challenge){
+                break;
+            }
+            // console.log(`Sending challenge ${challenge.id} to client ${client.uuid}`);
+            client.performChallenge(challenge);
+
+            if(client.calculateTrustScore() > config.minimumPassScore){
+                log(`Client ${client.uuid} has passed the challenge!`);
+                break;
+            }
+            else{
+                log(`Client ${client.uuid} has failed the challenge!`);
+            }
+        }
     
     
         socket.on('close', () => {
@@ -78,6 +92,7 @@ function nxtMiddleware(app, secureEndpoints, config = {
 
     app.get("/main.js", async (req, res) => {
         try {
+            console.log(`[1] finding client requested - ${new Date().toISOString()}`)
     
             let clientIdentifier = uuidv4();
     
@@ -89,21 +104,31 @@ function nxtMiddleware(app, secureEndpoints, config = {
             res.setHeader('Content-Type', 'application/javascript');
             res.cookie('nxt', clientIdentifier, { maxAge: 900000, signed: false, sameSite: 'None', secure: true });
     
-            const obfuscatedCode = await getScript(clientIdentifier);
+            var obfuscatedCode = await getScript(clientIdentifier);
     
+            console.log(`[2] finding client requested - ${new Date().toISOString()}`)
+
     
             res.send(obfuscatedCode);
         } catch (err) {
-            log(err);
+            if("Unexpected token" in err){
+                let charPos = err.message.split("(1:")[1].split(")")[0];
+                let charPosInt = parseInt(charPos);
+                let sentence = obfuscatedCode.toString()[charPosInt - 10] + obfuscatedCode.toString()[charPosInt - 9] + obfuscatedCode.toString()[charPosInt - 8] + obfuscatedCode.toString()[charPosInt - 7] + obfuscatedCode.toString()[charPosInt - 6] + obfuscatedCode.toString()[charPosInt - 5] + obfuscatedCode.toString()[charPosInt - 4] + obfuscatedCode.toString()[charPosInt - 3] + obfuscatedCode.toString()[charPosInt - 2] + obfuscatedCode.toString()[charPosInt - 1] + obfuscatedCode.toString()[charPosInt] + obfuscatedCode.toString()[charPosInt + 1] + obfuscatedCode.toString()[charPosInt + 2] + obfuscatedCode.toString()[charPosInt + 3] + obfuscatedCode.toString()[charPosInt + 4] + obfuscatedCode.toString()[charPosInt + 5] + obfuscatedCode.toString()[charPosInt + 6] + obfuscatedCode.toString()[charPosInt + 7] + obfuscatedCode.toString()[charPosInt + 8] + obfuscatedCode.toString()[charPosInt + 9] + obfuscatedCode.toString()[charPosInt + 10];
+                console.log(`Error at character ${charPos} - ${sentence}`);
+            }
+            else{
+                console.log(err);
+            }
             res.status(500).send('Sorry, something went wrong!');
         }
     });
 
-    app.get("/", (req, res) => {
+    app.get("/", async(req, res) => {
         res.sendFile(path.join(__dirname, "../tests/index.html"));
     });
 
-    app.use(function (req, res, next) {
+    app.use(async function (req, res, next) {
         if(secureEndpoints.includes(req.url)){
             log("Secure endpoint called");
             // check if user has a cookie
@@ -113,13 +138,13 @@ function nxtMiddleware(app, secureEndpoints, config = {
                 return;
             }
     
-            let client = getClient(req.cookies.nxt);
+            let client = await getClient(req.cookies.nxt)
     
             if(!client){
                 log("No client found");
                 res.status(401).send("No client found");
             }
-    
+
             let clientScore = client.calculateTrustScore(); // this will be a number between 0 and 1
 
             if(clientScore < config.minimumPassScore){

